@@ -10,6 +10,18 @@ mag=$'\e[1;35m'
 cyn=$'\e[1;36m'
 end=$'\e[0m'
 
+running="active"
+
+#Check that the user is running as root
+if [ "$EUID" -ne 0 ]
+then
+	printf "${red}Please run this script as root!${end}\n\n"
+	exit
+else
+	printf "${grn}User is root.${end}\n\n"
+fi
+
+#Check whether the user is loading a config file or if they need to make one
 if [ $# -eq 0 ]
 then
 	#Get the IP address of each machine
@@ -35,6 +47,7 @@ then
 	fi
 
 else
+	#Read from the configuration file provided
 	echo "Reading configuration from file $1"
 	machines=()
 	while IFS= read -r line; do
@@ -55,16 +68,48 @@ check_availability () {
 			#The ping was successful
 			printf "${grn}Host $address is available!${end}\n"
 		else
-			printf "${red}The host at $address did not respond to ping.${end}\n"
+			#The ping was not successful
+			printf "${red}The host at $address did not respond to pingi (ICMP).${end}\n"
 			printf "Check that the host is online and can recieve ICMP traffic\n"
 		fi
 		printf "========================================================\n\n"
 	done
 }
 
+#Check the status of a service and fix it if applicable
+check_service_status () {
+	#Check if the process is as expected
+	running=`systemctl is-active $1`
+
+	if [[ ! "$running" == "$2" ]]
+	then
+		#The service is as expected
+		return 1
+	else
+		#The service is not as expected
+		return 0
+	fi
+}
+
 #Check the configuration of machine A
 check_machine_a () {
-	printf "Checking the configuration of Machine A"
+	printf "Checking the configuration of Machine A\n\n"
+	
+	services=("dhcpd" "iptables")
+
+	for service in ${services[@]};
+	do
+		#Ensure that dhcpd is running
+		if check_service_status "$service" "$running"
+		then
+			printf "${grn}The $service service is running!${end}\n\n"
+		else
+			printf "${red}The $service service is not running!${end}\n\n"
+		fi
+	done
+	
+	printf "========================================================\n\n"
+	
 }
 
 #Check the availability of each host machine
@@ -78,7 +123,7 @@ echo "  4) Check Machine D/DNS Server"
 echo "  5) Check Machine F/Web Server" 
 echo "  6) Check Machine E/File Server" 
 
-read n
+read -p "Choice: " n
 case $n in
 	1) check_machine_a;;
 	2) echo "You chose Option 2";;
