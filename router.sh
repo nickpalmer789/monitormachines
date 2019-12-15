@@ -11,6 +11,12 @@ cyn=$'\e[1;36m'
 end=$'\e[0m'
 
 running="active"
+stopped="inactive"
+
+enabled="enabled"
+disabled="disabled"
+check_active="is-active"
+check_enabled="is-enabled"
 
 #Check that the user is running as root
 if [ "$EUID" -ne 0 ]
@@ -69,8 +75,9 @@ check_availability () {
 			printf "${grn}Host $address is available!${end}\n"
 		else
 			#The ping was not successful
-			printf "${red}The host at $address did not respond to pingi (ICMP).${end}\n"
-			printf "Check that the host is online and can recieve ICMP traffic\n"
+			printf "${red}The host at $address did not respond to ping (ICMP).${end}\n"
+			printf "${red}Check that the address ($address) is correct.${end}\n"
+			printf "Check that the host is online and can recieve ICMP traffic.\n"
 		fi
 		printf "========================================================\n\n"
 	done
@@ -79,9 +86,9 @@ check_availability () {
 #Check the status of a service and fix it if applicable
 check_service_status () {
 	#Check if the process is as expected
-	running=`systemctl is-active $1`
+	service_running=`systemctl $3 $1`
 
-	if [[ ! "$running" == "$2" ]]
+	if [[ ! "$service_running" == "$2" ]]
 	then
 		#The service is as expected
 		return 1
@@ -91,46 +98,107 @@ check_service_status () {
 	fi
 }
 
+#Checks the status of a remote service
+#$1 = service to check
+#$2 = status to check
+#$3 = host to check on
+#$4 = systemctl command to check
+check_remote_service () {
+	#Check if the remote process is as expected
+	service_running=`ssh root@$3 "systemctl $4 $1"`
+
+	if [[ "$service_running" == "$2"  ]]
+	then
+		#The service is as expected
+		printf "1"
+	else
+		#The service is not as expected
+		printf "0"
+	fi
+}
+
 #Check the configuration of machine A
 check_machine_a () {
 	printf "Checking the configuration of Machine A\n\n"
 	
-	services=("dhcpd" "iptables")
+	printf "Checking that the correct services are running and enabled\n\n"
+	services=("dhcpd" "iptables" "sshd")
 
 	for service in ${services[@]};
 	do
 		#Ensure that dhcpd is running
-		if check_service_status "$service" "$running"
+		if check_service_status "$service" "$running" "$check_active"
 		then
 			printf "${grn}The $service service is running!${end}\n\n"
 		else
 			printf "${red}The $service service is not running!${end}\n\n"
 		fi
+
+		#Ensure that dhcpd is running
+		if check_service_status "$service" "$enabled" "$check_enabled"
+		then
+			printf "${grn}The $service service is enabled!${end}\n\n"
+		else
+			printf "${red}The $service service is not enabled!${end}\n\n"
+		fi
 	done
+
 	
 	printf "========================================================\n\n"
 	
 }
 
+#Check the configuration of machine B
+check_machine_b () {
+	printf "Checking the configuration of Machine B\n\n"
+
+	services=("httpd" "iptables")
+
+	for service in ${services[@]};
+	do
+		service_active=$(check_remote_service "$service" "$running" "${machines[1]}" "$check_active")
+
+		if [[ ! $service_active == "0" ]]
+		then
+			printf "${grn}The $service service is running on machine B!${end}\n\n"
+		else
+			printf "${red}The $service service is not running on machine B!${end}\n\n"
+		fi
+
+	done
+	printf "========================================================\n\n"
+}
+
 #Check the availability of each host machine
 check_availability
 
-echo "Select an operation: "
-echo "  1) Check Machine A/Router"
-echo "  2) Check Machine B/Web Server"
-echo "  3) Check Machine C/FTP Server"
-echo "  4) Check Machine D/DNS Server" 
-echo "  5) Check Machine F/Web Server" 
-echo "  6) Check Machine E/File Server" 
+#Give the user a menu for checking machines
+while true
+do
+	echo "Select an operation: "
+	echo "  1) Check machine availability (ICMP)"
+	echo "  2) Check Machine A/Router"
+	echo "  3) Check Machine B/Web Server"
+	echo "  4) Check Machine C/FTP Server"
+	echo "  5) Check Machine D/DNS Server" 
+	echo "  6) Check Machine F/Web Server" 
+	echo "  7) Check Machine E/File Server" 
+	echo "  8) Exit"
 
-read -p "Choice: " n
-case $n in
-	1) check_machine_a;;
-	2) echo "You chose Option 2";;
-	3) echo "You chose Option 3";;
-	4) echo "You chose Option 4";;
-	*) echo "invalid option";;
-esac
+	read -p "Choice: " n
+	case $n in
+		1) check_availability;;
+		2) check_machine_a;;
+		3) check_machine_b;;
+		4) echo "You chose Option 4";;
+		5) echo "You chose Option 4";;
+		6) echo "You chose Option 4";;
+		7) echo "You chose Option 4";;
+		8) exit;;
+		*) echo "invalid option";;
+	esac
+done
+
 
 
 
